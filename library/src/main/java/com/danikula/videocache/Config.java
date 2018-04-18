@@ -19,6 +19,7 @@ class Config {
     public final DiskUsage diskUsage;
     public final SourceInfoStorage sourceInfoStorage;
     public final HeaderInjector headerInjector;
+    public long range;
 
     Config(File cacheRoot, FileNameGenerator fileNameGenerator, DiskUsage diskUsage, SourceInfoStorage sourceInfoStorage, HeaderInjector headerInjector) {
         this.cacheRoot = cacheRoot;
@@ -30,6 +31,12 @@ class Config {
 
     File generateCacheFile(String url) {
         String name = fileNameGenerator.generate(url);
+        return new File(cacheRoot, name);
+    }
+
+    File generateCacheFile(String url, long range) {
+        this.range = range;
+        String name = fileNameGenerator.generate(url) + "_" + range;
         return new File(cacheRoot, name);
     }
 

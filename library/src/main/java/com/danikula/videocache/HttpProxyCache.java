@@ -24,11 +24,14 @@ class HttpProxyCache extends ProxyCache {
     private final HttpUrlSource source;
     private final FileCache cache;
     private CacheListener listener;
+    private static final byte[] MOOV_BOX = new byte[]{0x6d, 0x6f, 0x6f, 0x76};
+    private Config config;
 
-    public HttpProxyCache(HttpUrlSource source, FileCache cache) {
+    public HttpProxyCache(HttpUrlSource source, FileCache cache, Config config) {
         super(source, cache);
         this.cache = cache;
         this.source = source;
+        this.config = config;
     }
 
     public void registerCacheListener(CacheListener cacheListener) {
@@ -43,6 +46,9 @@ class HttpProxyCache extends ProxyCache {
         long offset = request.rangeOffset;
         if (isUseCache(request)) {
             responseWithCache(out, offset);
+        } else if (moovCacheAbaliable(offset)) {
+            //是moov元信息  且元信息已有缓存
+            responseMoovWithCache(out, offset);
         } else {
             responseWithoutCache(out, offset);
         }
@@ -89,7 +95,27 @@ class HttpProxyCache extends ProxyCache {
             newSourceNoCache.open((int) offset);
             byte[] buffer = new byte[DEFAULT_BUFFER_SIZE];
             int readBytes;
+            int i = 0;
+            boolean currentIsMoov = false;
             while ((readBytes = newSourceNoCache.read(buffer)) != -1) {
+                if (i == 0) {
+                    boolean isMoovBox = true;
+                    for (int j = 0; j < 4; j++) {
+                        if (buffer[j + 4] != MOOV_BOX[j]) {
+                            isMoovBox = false;
+                            break;
+                        }
+                    }
+                    if (isMoovBox) {
+                        currentIsMoov = true;
+                        createMoovCache(config, source.getUrl(), offset);
+
+                    }
+                }
+                i++;
+                if (currentIsMoov) {
+                    appendMoov(buffer, readBytes);
+                }
                 out.write(buffer, 0, readBytes);
                 offset += readBytes;
             }
@@ -97,6 +123,16 @@ class HttpProxyCache extends ProxyCache {
         } finally {
             newSourceNoCache.close();
         }
+    }
+
+    private void responseMoovWithCache(OutputStream out, long offset) throws ProxyCacheException, IOException {
+        byte[] buffer = new byte[DEFAULT_BUFFER_SIZE];
+        int readBytes;
+        while ((readBytes = readMoov(buffer, offset, buffer.length)) != -1) {
+            out.write(buffer, 0, readBytes);
+            offset += readBytes;
+        }
+        out.flush();
     }
 
     private String format(String pattern, Object... args) {

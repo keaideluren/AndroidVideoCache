@@ -1,5 +1,7 @@
 package com.danikula.videocache;
 
+import com.danikula.videocache.file.FileCache;
+
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -29,6 +31,8 @@ class ProxyCache {
     private volatile Thread sourceReaderThread;
     private volatile boolean stopped;
     private volatile int percentsAvailable = -1;
+    protected FileCache moovCache;//mp4 moov在后面的类型也要把这个缓存了
+    private long moovRange;
 
     public ProxyCache(Source source, Cache cache) {
         this.source = checkNotNull(source);
@@ -50,6 +54,37 @@ class ProxyCache {
             onCachePercentsAvailableChanged(100);
         }
         return read;
+    }
+
+    protected int readMoov(byte[] buffer, long offset, int length) throws ProxyCacheException {
+        return moovCache.read(buffer, offset, length);
+    }
+
+    protected void createMoovCache(Config config, String url, long offset) throws ProxyCacheException {
+        moovRange = offset;
+        moovCache = new FileCache(config.generateCacheFile(url, offset), config.diskUsage);
+    }
+
+    protected void appendMoov(byte[] buffer,int readBytes) throws ProxyCacheException {
+        if (moovCache != null) {
+            moovCache.append(buffer, readBytes);
+        }
+    }
+
+    protected boolean moovCacheAbaliable(long offset) {
+        try {
+            if (moovCache != null && moovCache.available() >= 4) {
+                byte[] buffer = new byte[4];
+                moovCache.read(buffer, 0, 4);
+                if (IntegerByteTransformer.byteToInteger(buffer) == moovCache.available()
+                        && moovRange == offset && moovRange > 0) {
+                    return true;
+                }
+            }
+        } catch (ProxyCacheException e) {
+            e.printStackTrace();
+        }
+        return false;
     }
 
     private void checkReadSourceErrorsCount() throws ProxyCacheException {
