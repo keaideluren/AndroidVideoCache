@@ -28,7 +28,7 @@ class HttpProxyCache extends ProxyCache {
     private Config config;
 
     public HttpProxyCache(HttpUrlSource source, FileCache cache, Config config) {
-        super(source, cache);
+        super(source, cache, config);
         this.cache = cache;
         this.source = source;
         this.config = config;
@@ -46,9 +46,9 @@ class HttpProxyCache extends ProxyCache {
         long offset = request.rangeOffset;
         if (isUseCache(request)) {
             responseWithCache(out, offset);
-        } else if (moovCacheAbaliable(offset)) {
+        } else if (moovCacheAbaliable(offset, source.getUrl())) {
             //是moov元信息  且元信息已有缓存
-            responseMoovWithCache(out, offset);
+            responseMoovWithCache(out);
         } else {
             responseWithoutCache(out, offset);
         }
@@ -108,8 +108,7 @@ class HttpProxyCache extends ProxyCache {
                     }
                     if (isMoovBox) {
                         currentIsMoov = true;
-                        createMoovCache(config, source.getUrl(), offset);
-
+                        createMoovCache(source.getUrl(), offset);
                     }
                 }
                 i++;
@@ -119,15 +118,19 @@ class HttpProxyCache extends ProxyCache {
                 out.write(buffer, 0, readBytes);
                 offset += readBytes;
             }
+            if (currentIsMoov) {
+                completeMoovCache();
+            }
             out.flush();
         } finally {
             newSourceNoCache.close();
         }
     }
 
-    private void responseMoovWithCache(OutputStream out, long offset) throws ProxyCacheException, IOException {
+    private void responseMoovWithCache(OutputStream out) throws ProxyCacheException, IOException {
         byte[] buffer = new byte[DEFAULT_BUFFER_SIZE];
         int readBytes;
+        long offset = 0;
         while ((readBytes = readMoov(buffer, offset, buffer.length)) != -1) {
             out.write(buffer, 0, readBytes);
             offset += readBytes;

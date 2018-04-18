@@ -1,9 +1,7 @@
 package com.danikula.videocache;
 
-import com.danikula.videocache.file.FileCache;
 
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
+import com.danikula.videocache.file.FileCache;
 
 import java.util.concurrent.atomic.AtomicInteger;
 
@@ -20,7 +18,6 @@ import static com.danikula.videocache.Preconditions.checkNotNull;
  */
 class ProxyCache {
 
-    private static final Logger LOG = LoggerFactory.getLogger("ProxyCache");
     private static final int MAX_READ_SOURCE_ATTEMPTS = 1;
 
     private final Source source;
@@ -33,10 +30,12 @@ class ProxyCache {
     private volatile int percentsAvailable = -1;
     protected FileCache moovCache;//mp4 moov在后面的类型也要把这个缓存了
     private long moovRange;
+    private Config config;
 
-    public ProxyCache(Source source, Cache cache) {
+    public ProxyCache(Source source, Cache cache, Config config) {
         this.source = checkNotNull(source);
         this.cache = checkNotNull(cache);
+        this.config = config;
         this.readSourceErrorsCount = new AtomicInteger();
     }
 
@@ -56,37 +55,6 @@ class ProxyCache {
         return read;
     }
 
-    protected int readMoov(byte[] buffer, long offset, int length) throws ProxyCacheException {
-        return moovCache.read(buffer, offset, length);
-    }
-
-    protected void createMoovCache(Config config, String url, long offset) throws ProxyCacheException {
-        moovRange = offset;
-        moovCache = new FileCache(config.generateCacheFile(url, offset), config.diskUsage);
-    }
-
-    protected void appendMoov(byte[] buffer,int readBytes) throws ProxyCacheException {
-        if (moovCache != null) {
-            moovCache.append(buffer, readBytes);
-        }
-    }
-
-    protected boolean moovCacheAbaliable(long offset) {
-        try {
-            if (moovCache != null && moovCache.available() >= 4) {
-                byte[] buffer = new byte[4];
-                moovCache.read(buffer, 0, 4);
-                if (IntegerByteTransformer.byteToInteger(buffer) == moovCache.available()
-                        && moovRange == offset && moovRange > 0) {
-                    return true;
-                }
-            }
-        } catch (ProxyCacheException e) {
-            e.printStackTrace();
-        }
-        return false;
-    }
-
     private void checkReadSourceErrorsCount() throws ProxyCacheException {
         int errorsCount = readSourceErrorsCount.get();
         if (errorsCount >= MAX_READ_SOURCE_ATTEMPTS) {
@@ -95,9 +63,52 @@ class ProxyCache {
         }
     }
 
+
+    protected int readMoov(byte[] buffer, long offset, int length) throws ProxyCacheException {
+        return moovCache.read(buffer, offset, length);
+    }
+
+    protected void createMoovCache(String url, long offset) throws ProxyCacheException {
+        moovRange = offset;
+        moovCache = new FileCache(config.generateCacheFile(url, offset), config.diskUsage);
+
+    }
+
+    protected void appendMoov(byte[] buffer, int readBytes) throws ProxyCacheException {
+        if (moovCache != null) {
+            moovCache.append(buffer, readBytes);
+        }
+    }
+
+    protected boolean moovCacheAbaliable(long offset, String url) throws ProxyCacheException {
+        if (moovCache == null) {
+            moovCache = new FileCache(config.generateCacheFile(url, offset), config.diskUsage);
+        }
+        if (moovCache.file.exists() && moovCache.available() >= 4) {
+            byte[] buffer = new byte[4];
+            moovCache.read(buffer, 0, 4);
+            String name = moovCache.file.getName();
+            String[] split = name.split("_");
+            if (split.length == 3) {
+                moovRange = Long.parseLong(split[1]);
+            }
+            boolean completed = moovCache.isCompleted();
+            if (completed && moovRange == offset && moovRange > 0) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    protected void completeMoovCache() throws ProxyCacheException {
+        if (moovCache != null && moovRange > 0) {
+            moovCache.complete();
+        }
+    }
+
+
     public void shutdown() {
         synchronized (stopLock) {
-            LOG.debug("Shutdown proxy for " + source);
             try {
                 stopped = true;
                 if (sourceReaderThread != null) {
@@ -207,12 +218,12 @@ class ProxyCache {
     }
 
     protected final void onError(final Throwable e) {
-        boolean interruption = e instanceof InterruptedProxyCacheException;
-        if (interruption) {
-            LOG.debug("ProxyCache is interrupted");
-        } else {
-            LOG.error("ProxyCache error", e);
-        }
+//        boolean interruption = e instanceof InterruptedProxyCacheException;
+//        if (interruption) {
+//            LOG.debug("ProxyCache is interrupted");
+//        } else {
+//            LOG.error("ProxyCache error", e);
+//        }
     }
 
     private class SourceReaderRunnable implements Runnable {

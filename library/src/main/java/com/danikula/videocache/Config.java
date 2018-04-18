@@ -36,7 +36,7 @@ class Config {
 
     File generateCacheFile(String url, long range) {
         this.range = range;
-        String name = fileNameGenerator.generate(url) + "_" + range;
+        String name = "range_" + range + "_" + fileNameGenerator.generate(url);
         return new File(cacheRoot, name);
     }
 
